@@ -110,6 +110,10 @@ docker run --rm \
 
 TracePack's deployment artifact is the generated case-pack folder. Copy or archive that folder to the intended review location, then open `case_pack.html`. For a quick local preview of the same static folder, run `python -m http.server` from inside the output folder; the page still makes no network requests.
 
+The repository also publishes the included fixture case as a static GitHub Pages demo after each successful push:
+
+<https://ojas2095.github.io/tracepack/>
+
 ## Design notes and limitations
 
 - Text previews are capped at 512 KiB per source file to keep a case pack responsive. Hashes always cover the complete source file.
