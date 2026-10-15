@@ -1,0 +1,3 @@
+2025-02-14T10:18:42Z INFO gateway request_id=req-1842 actor=analyst action=export status=started
+2025-02-14T10:19:07Z WARN gateway request_id=req-1842 actor=analyst action=export status=retry reason=upstream-timeout
+2025-02-14T10:21:33Z INFO gateway request_id=req-1842 actor=analyst action=export status=completed rows=1842

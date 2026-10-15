@@ -1,0 +1,7 @@
+Review notes
+============
+
+2025-02-14 13:40:00 — The retry completed successfully and produced the expected row count.
+2025-02-14 14:05:00 — Reviewer compared the export checksum with the retained source snapshot.
+
+Conclusion: no records were lost. The temporary mismatch was caused by the upstream timeout and recovered on retry.

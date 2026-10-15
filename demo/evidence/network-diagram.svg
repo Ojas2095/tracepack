@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="180" viewBox="0 0 720 180" role="img" aria-label="Evidence flow diagram">
+  <rect width="720" height="180" rx="18" fill="#f6f8fb"/>
+  <g font-family="Arial, sans-serif" font-size="14" fill="#102a43">
+    <rect x="28" y="62" width="150" height="56" rx="10" fill="#ccfbf1" stroke="#0d9488"/>
+    <text x="103" y="95" text-anchor="middle">Source snapshot</text>
+    <rect x="285" y="62" width="150" height="56" rx="10" fill="#dbeafe" stroke="#3b82f6"/>
+    <text x="360" y="95" text-anchor="middle">Export worker</text>
+    <rect x="542" y="62" width="150" height="56" rx="10" fill="#fef3c7" stroke="#f59e0b"/>
+    <text x="617" y="95" text-anchor="middle">Reviewer copy</text>
+    <path d="M178 90h107m150 0h107" stroke="#627d98" stroke-width="3" marker-end="url(#arrow)"/>
+    <text x="360" y="35" text-anchor="middle" fill="#627d98">retained evidence flow</text>
+  </g>
+  <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="#627d98"/></marker></defs>
+</svg>
