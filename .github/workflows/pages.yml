@@ -42,6 +42,8 @@ jobs:
           python-version: '3.13.6'
       - name: Build static demo pack
         run: python -m tracepack build demo/evidence --output site --title "TracePack demo" --force
+      - name: Make the demo the Pages landing page
+        run: cp site/case_pack.html site/index.html
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload Pages artifact
