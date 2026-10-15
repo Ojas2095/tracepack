@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from . import __version__
-from .core import write_case_pack
+from .core import verify_case_pack, write_case_pack
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,6 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("-o", "--output", type=Path, required=True, help="empty or replaceable output folder")
     build.add_argument("--title", default="Evidence case pack", help="case title shown in the generated pack")
     build.add_argument("--force", action="store_true", help="replace an existing non-empty output folder")
+    verify = subparsers.add_parser("verify", help="verify a generated pack and its copied evidence")
+    verify.add_argument("pack", type=Path, help="generated case-pack folder")
     return parser
 
 
@@ -35,5 +37,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Built TracePack for {args.input} ({len(files)} generated artifacts)")
         for path in files.values():
             print(f"  - {path}")
+        return 0
+    if args.command == "verify":
+        try:
+            errors = verify_case_pack(args.pack)
+        except OSError as error:
+            print(f"tracepack: error: {error}")
+            return 2
+        if errors:
+            print("TracePack verification failed:")
+            for error in errors:
+                print(f"  - {error}")
+            return 2
+        print(f"TracePack verification passed: {args.pack}")
         return 0
     return 2

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from tracepack.cli import main
-from tracepack.core import build_timeline, discover_evidence, parse_timestamp, write_case_pack
+from tracepack.core import build_timeline, discover_evidence, parse_timestamp, verify_case_pack, write_case_pack
 
 
 class TracePackTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class TracePackTests(unittest.TestCase):
         self.evidence = self.root / "evidence"
         self.evidence.mkdir()
         (self.evidence / "notes.md").write_text(
-            "# Review\n\n2025-04-02T08:30:00Z — Intake accepted.\n\n<script>not executable</script>\n",
+            "# Review\n\n2025-04-02T08:30:00Z — Intake accepted.\n2025-99-99 — malformed vendor token.\n\n<script>not executable</script>\n",
             encoding="utf-8",
         )
         nested = self.evidence / "exports"
@@ -59,6 +59,8 @@ class TracePackTests(unittest.TestCase):
         html = (output / "case_pack.html").read_text(encoding="utf-8")
         self.assertIn("April review", html)
         self.assertIn("id=\"search\"", html)
+        self.assertIn('aria-label=\"Filter evidence\"', html)
+        self.assertIn('aria-pressed=\"true\"', html)
         self.assertIn("&lt;script&gt;not executable&lt;/script&gt;", html)
         self.assertNotIn("<script>not executable</script>", html)
 
@@ -69,6 +71,29 @@ class TracePackTests(unittest.TestCase):
         self.assertTrue((output / "manifest.sha256").read_text(encoding="utf-8").startswith(manifest_hash))
         self.assertIn("April review", (output / "summary.md").read_text(encoding="utf-8"))
         self.assertIn("2025-04-02", (output / "timeline.md").read_text(encoding="utf-8"))
+        self.assertTrue((output / "evidence" / "exports" / "result.csv").exists())
+        self.assertEqual(verify_case_pack(output), [])
+
+    def test_build_rejects_overlapping_paths_without_deleting_evidence(self) -> None:
+        sentinel = self.root / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        result = main(["build", str(self.evidence), "--output", str(self.root), "--force"])
+        self.assertEqual(result, 2)
+        self.assertTrue((self.evidence / "notes.md").exists())
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+
+    def test_force_build_preserves_previous_output_when_discovery_fails(self) -> None:
+        output = self.root / "pack"
+        output.write_text("previous", encoding="utf-8")
+        result = main(["build", str(self.evidence), "--output", str(output), "--force"])
+        self.assertNotEqual(result, 0)
+        self.assertEqual(output.read_text(encoding="utf-8"), "previous")
+
+    def test_verify_detects_tampered_copied_source(self) -> None:
+        output = self.root / "pack"
+        write_case_pack(self.evidence, output, "April review")
+        (output / "evidence" / "exports" / "result.csv").write_text("tampered", encoding="utf-8")
+        self.assertIn("source checksum mismatch: exports/result.csv", verify_case_pack(output))
 
     def test_cli_rejects_non_empty_output_without_force(self) -> None:
         output = self.root / "pack"

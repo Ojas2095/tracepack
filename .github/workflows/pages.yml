@@ -26,6 +26,16 @@ jobs:
           python-version: '3.13.6'
       - name: Run offline test suite
         run: python -m unittest discover -s tests -v
+      - name: Build and verify the demo pack
+        run: |
+          python -m tracepack build demo/evidence --output ci-output --title "CI demo" --force
+          python -m tracepack verify ci-output
+          test -f ci-output/case_pack.html
+          test -f ci-output/evidence/network-diagram.svg
+      - name: Build and smoke-test Docker image
+        run: |
+          docker build -t tracepack-ci .
+          docker run --rm tracepack-ci
 
   publish:
     needs: test

@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import tempfile
 from typing import Iterable
 
 MAX_TEXT_BYTES = 512_000
@@ -134,6 +135,15 @@ def parse_timestamp(token: str) -> datetime:
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
 
 
+def _safe_timestamp(token: str) -> datetime | None:
+    """Parse a candidate timestamp without letting one bad log line abort a build."""
+
+    try:
+        return parse_timestamp(token)
+    except ValueError:
+        return None
+
+
 def category_for(path: Path) -> str:
     """Return a useful human label for a file extension."""
 
@@ -148,7 +158,10 @@ def discover_evidence(input_dir: Path) -> list[EvidenceFile]:
         raise ValueError(f"Evidence folder does not exist or is not a directory: {input_dir}")
 
     evidence: list[EvidenceFile] = []
-    for path in sorted((candidate for candidate in input_dir.rglob("*") if candidate.is_file()), key=lambda p: p.as_posix().lower()):
+    for path in sorted(
+        (candidate for candidate in input_dir.rglob("*") if candidate.is_file() and not candidate.is_symlink()),
+        key=lambda p: p.as_posix().lower(),
+    ):
         relative_path = path.relative_to(input_dir).as_posix()
         is_text, content, truncated = _read_text_preview(path)
         evidence.append(
@@ -184,19 +197,24 @@ def build_timeline(evidence: Iterable[EvidenceFile]) -> list[TimelineEvent]:
                 match = TIMESTAMP_PATTERN.search(line)
                 if not match:
                     continue
-                item_events.append(
-                    TimelineEvent(
-                        at=parse_timestamp(match.group("stamp")),
-                        source=item.relative_path,
-                        label="Evidence note",
-                        detail=_event_detail(line),
+                parsed = _safe_timestamp(match.group("stamp"))
+                if parsed is not None:
+                    item_events.append(
+                        TimelineEvent(
+                            at=parsed,
+                            source=item.relative_path,
+                            label="Evidence note",
+                            detail=_event_detail(line),
+                        )
                     )
-                )
         if item_events:
             events.extend(item_events)
             continue
 
-        fallback = parse_timestamp(item.date_tokens[0]) if item.date_tokens else item.modified_at
+        fallback = next(
+            (parsed for token in item.date_tokens if (parsed := _safe_timestamp(token)) is not None),
+            item.modified_at,
+        )
         events.append(
             TimelineEvent(
                 at=fallback,
@@ -235,13 +253,11 @@ def write_case_pack(input_dir: Path, output_dir: Path, title: str, *, force: boo
 
     input_dir = input_dir.expanduser().resolve()
     output_dir = output_dir.expanduser().resolve()
-    if input_dir == output_dir:
-        raise ValueError("Output folder must be different from the evidence folder")
+    if input_dir == output_dir or input_dir.is_relative_to(output_dir) or output_dir.is_relative_to(input_dir):
+        raise ValueError("Output folder must not overlap the evidence folder")
     if output_dir.exists() and any(output_dir.iterdir()):
         if not force:
             raise ValueError(f"Output folder is not empty; pass --force to replace it: {output_dir}")
-        shutil.rmtree(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     evidence = discover_evidence(input_dir)
     timeline = build_timeline(evidence)
@@ -250,25 +266,68 @@ def write_case_pack(input_dir: Path, output_dir: Path, title: str, *, force: boo
     manifest_text = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     manifest_bytes = manifest_text.encode("utf-8")
     manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
+    stage = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.", dir=output_dir.parent))
+    try:
+        files = {
+            "html": stage / "case_pack.html",
+            "summary": stage / "summary.md",
+            "timeline": stage / "timeline.md",
+            "manifest": stage / "manifest.json",
+            "manifest_hash": stage / "manifest.sha256",
+            "styles": stage / "styles.css",
+            "script": stage / "app.js",
+        }
+        files["html"].write_text(render_html(title, evidence, timeline, manifest_hash, generated_at), encoding="utf-8")
+        files["summary"].write_text(render_markdown_summary(title, evidence, timeline, manifest_hash, generated_at), encoding="utf-8")
+        files["timeline"].write_text(render_timeline(timeline), encoding="utf-8")
+        files["manifest"].write_bytes(manifest_bytes)
+        files["manifest_hash"].write_text(f"{manifest_hash}  manifest.json\n", encoding="utf-8")
+        files["styles"].write_text(styles_css(), encoding="utf-8")
+        files["script"].write_text(app_js(), encoding="utf-8")
+        source_root = stage / "evidence"
+        for item in evidence:
+            destination = source_root / item.relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(input_dir / item.relative_path, destination)
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        stage.replace(output_dir)
+        return {key: output_dir / path.relative_to(stage) for key, path in files.items()}
+    except Exception:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
 
-    files = {
-        "html": output_dir / "case_pack.html",
-        "summary": output_dir / "summary.md",
-        "timeline": output_dir / "timeline.md",
-        "manifest": output_dir / "manifest.json",
-        "manifest_hash": output_dir / "manifest.sha256",
-        "styles": output_dir / "styles.css",
-        "script": output_dir / "app.js",
-    }
-    files["html"].write_text(
-        render_html(title, evidence, timeline, manifest_hash, generated_at), encoding="utf-8"
-    )
-    files["summary"].write_text(
-        render_markdown_summary(title, evidence, timeline, manifest_hash, generated_at), encoding="utf-8"
-    )
-    files["timeline"].write_text(render_timeline(timeline), encoding="utf-8")
-    files["manifest"].write_bytes(manifest_bytes)
-    files["manifest_hash"].write_text(f"{manifest_hash}  manifest.json\n", encoding="utf-8")
-    files["styles"].write_text(styles_css(), encoding="utf-8")
-    files["script"].write_text(app_js(), encoding="utf-8")
-    return files
+
+def verify_case_pack(pack_dir: Path) -> list[str]:
+    """Verify the manifest checksum and every copied source file in a pack."""
+
+    pack_dir = pack_dir.expanduser().resolve()
+    manifest_path = pack_dir / "manifest.json"
+    checksum_path = pack_dir / "manifest.sha256"
+    errors: list[str] = []
+    if not manifest_path.is_file() or not checksum_path.is_file():
+        return ["missing manifest.json or manifest.sha256"]
+    manifest_bytes = manifest_path.read_bytes()
+    expected_manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
+    recorded = checksum_path.read_text(encoding="utf-8").split()
+    if not recorded or recorded[0] != expected_manifest_hash:
+        errors.append("manifest.json checksum does not match manifest.sha256")
+    try:
+        manifest = json.loads(manifest_bytes)
+    except json.JSONDecodeError as error:
+        return errors + [f"manifest.json is invalid JSON: {error}"]
+    for item in manifest.get("files", []):
+        relative = Path(str(item.get("path", "")))
+        source = pack_dir / "evidence" / relative
+        try:
+            source.resolve().relative_to((pack_dir / "evidence").resolve())
+        except ValueError:
+            errors.append(f"unsafe manifest path: {relative.as_posix()}")
+            continue
+        if not source.is_file() or source.is_symlink():
+            errors.append(f"missing copied evidence: {relative.as_posix()}")
+            continue
+        actual = _hash_file(source)
+        if actual != item.get("sha256"):
+            errors.append(f"source checksum mismatch: {relative.as_posix()}")
+    return errors

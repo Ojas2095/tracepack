@@ -23,7 +23,13 @@ def _display_time(value: datetime) -> str:
 
 
 def _markdown_cell(value: str) -> str:
-    return value.replace("|", "\\|").replace("\n", " ")
+    return _markdown_safe(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _markdown_safe(value: str) -> str:
+    """Keep evidence-derived Markdown text inert when rendered by a viewer."""
+
+    return escape(value, quote=False).replace("`", "\\`").replace("\\", "\\\\")
 
 
 def _event_json(event: TimelineEvent) -> str:
@@ -42,8 +48,8 @@ def render_timeline(timeline: Sequence[TimelineEvent]) -> str:
         lines.extend(
             [
                 f"## {_display_time(event.at)} — {event.label}",
-                f"**Source:** `{event.source}`  ",
-                event.detail,
+                f"**Source:** `{_markdown_cell(event.source)}`  ",
+                _markdown_safe(event.detail),
                 "",
             ]
         )
@@ -64,7 +70,7 @@ def render_markdown_summary(
         total_bytes += item.size
     category_text = ", ".join(f"{name} ({count})" for name, count in sorted(categories.items())) or "None"
     lines = [
-        f"# {title}",
+        f"# {_markdown_safe(title)}",
         "",
         "> Offline-generated evidence brief by TracePack.",
         "",
@@ -91,7 +97,7 @@ def render_markdown_summary(
         lines.append("| *(none)* | — | — | — |")
     lines.extend(["", "## Timeline snapshot", ""])
     for event in timeline[:12]:
-        lines.append(f"- **{_display_time(event.at)}** · `{event.source}` — {event.detail}")
+        lines.append(f"- **{_display_time(event.at)}** · `{_markdown_cell(event.source)}` — {_markdown_safe(event.detail)}")
     if len(timeline) > 12:
         lines.append(f"- _…and {len(timeline) - 12} more events in `timeline.md`._")
     lines.extend(["", "## How to use this pack", "", "Open `case_pack.html` locally for full-text search and category filters. Everything in this folder is self-contained and works without a network connection.", ""])
@@ -108,7 +114,7 @@ def render_html(
     total_bytes = sum(item.size for item in evidence)
     categories = sorted({item.category for item in evidence})
     category_options = "".join(
-        f'<button class="filter-chip" data-filter="{escape(category, quote=True)}">{escape(category)}</button>'
+        f'<button class="filter-chip" type="button" aria-pressed="false" data-filter="{escape(category, quote=True)}">{escape(category)}</button>'
         for category in categories
     )
     timeline_markup = "".join(
@@ -122,7 +128,7 @@ def render_html(
     )
     cards: list[str] = []
     for item in evidence:
-        content = item.content if item.is_text else "Binary or non-text evidence. Open the original source file alongside this pack."
+        content = item.content if item.is_text else "Binary or non-text evidence. Download the complete source below."
         if item.content_truncated:
             content += "\n\n[TracePack preview truncated at 512 KB; the SHA-256 covers the complete source file.]"
         search_text = f"{item.relative_path} {item.category} {item.extension} {item.content}".lower()
@@ -133,6 +139,7 @@ def render_html(
               <h3>{escape(item.relative_path)}</h3>
               <p class="file-meta">{escape(item.extension)} · modified {escape(_display_time(item.modified_at))}</p>
               <details><summary>View evidence preview</summary><pre>{escape(content)}</pre></details>
+              <p class="source-link"><a href="evidence/{escape(item.relative_path, quote=True)}" download>Open complete source ↗</a></p>
               <div class="hash-row" title="SHA-256">SHA-256 <code>{escape(item.sha256)}</code></div>
             </article>"""
         )
@@ -164,12 +171,12 @@ def render_html(
       <div class="stat-card accent"><span class="stat-label">Manifest</span><strong>{escape(manifest_hash[:12])}</strong><span class="stat-foot">SHA-256 prefix</span></div>
     </section>
     <section class="workspace">
-      <div class="section-heading"><div><span class="section-kicker">01 / FIND YOUR SIGNAL</span><h2>Evidence index</h2></div><span id="result-count" class="result-count">{len(evidence)} shown</span></div>
-      <div class="toolbar">
-        <label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search files, notes, hashes…" autocomplete="off"><kbd>/</kbd></label>
-        <div class="filter-row" aria-label="Filter evidence"><button class="filter-chip active" data-filter="all">All</button>{category_options}</div>
-      </div>
-      <div id="evidence-grid" class="evidence-grid">{cards_markup}</div>
+       <div class="section-heading"><div><span class="section-kicker">01 / FIND YOUR SIGNAL</span><h2>Evidence index</h2></div><span id="result-count" class="result-count" aria-live="polite">{len(evidence)} shown</span></div>
+       <div class="toolbar">
+         <label class="search-box"><span aria-hidden="true">⌕</span><span class="sr-only">Search evidence</span><input id="search" type="search" placeholder="Search files, notes, hashes…" autocomplete="off"><kbd>/</kbd></label>
+         <div class="filter-row" role="group" aria-label="Filter evidence"><button class="filter-chip active" type="button" aria-pressed="true" data-filter="all">All</button>{category_options}</div>
+       </div>
+       <div id="evidence-grid" class="evidence-grid">{cards_markup}<p id="empty-results" class="empty-state" hidden>No matching evidence. Clear the search or choose All.</p></div>
     </section>
     <section class="timeline-section">
       <div class="section-heading"><div><span class="section-kicker">02 / FOLLOW THE THREAD</span><h2>Chronology</h2></div><a class="text-link" href="timeline.md">Open Markdown timeline ↗</a></div>
@@ -201,6 +208,7 @@ html { scroll-behavior: smooth; }
 body { margin: 0; color: var(--ink); background: var(--paper); font: 15px/1.6 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 a { color: inherit; }
 .shell { width: min(1160px, calc(100% - 40px)); margin: 0 auto; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .hero { color: #f5fbff; background: radial-gradient(circle at 85% 10%, rgba(45, 212, 191, .28), transparent 33%), linear-gradient(135deg, #102a43 0%, #163e5c 55%, #0f766e 130%); padding: 64px 0 74px; }
 .hero-inner { max-width: 900px; }
 .eyebrow, .section-kicker, .stat-label { letter-spacing: .13em; text-transform: uppercase; font-size: 11px; font-weight: 800; }
@@ -230,6 +238,7 @@ kbd { padding: 1px 6px; color: var(--muted); background: #edf2f7; border: 1px so
 .filter-row { display: flex; flex-wrap: wrap; gap: 7px; }
 .filter-chip { cursor: pointer; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; font: 700 12px inherit; }
 .filter-chip:hover, .filter-chip.active { color: #0f766e; border-color: #5eead4; background: var(--teal-soft); }
+.filter-chip:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
 .evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; }
 .evidence-card { min-width: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 5px 20px rgba(16, 42, 67, .035); }
 .evidence-card:hover { border-color: #9fb3c8; box-shadow: var(--shadow); }
@@ -244,6 +253,8 @@ summary:hover { color: var(--teal); }
 pre { overflow: auto; max-height: 280px; margin: 0; padding: 14px 18px 17px; color: #334e68; background: #f8fafc; border-top: 1px solid #edf2f7; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .hash-row { overflow-wrap: anywhere; margin-top: auto; padding: 12px 18px 15px; color: var(--muted); border-top: 1px solid #edf2f7; font-size: 10px; letter-spacing: .04em; }
 .hash-row code { color: #486581; font-size: 10px; }
+.source-link { margin: 0; padding: 10px 18px; border-top: 1px solid #edf2f7; color: #0f766e; font-size: 12px; font-weight: 700; }
+.source-link a { text-decoration: none; }
 .timeline { position: relative; list-style: none; margin: 0; padding: 3px 0 0 28px; }
 .timeline::before { content: ""; position: absolute; left: 6px; top: 5px; bottom: 5px; width: 2px; background: #b7e4dd; }
 .timeline-item { position: relative; display: grid; grid-template-columns: 165px 1fr; gap: 25px; padding: 0 0 28px; }
@@ -268,6 +279,7 @@ def app_js() -> str:
   const cards = [...document.querySelectorAll('.evidence-card')];
   const chips = [...document.querySelectorAll('.filter-chip')];
   const resultCount = document.querySelector('#result-count');
+  const emptyResults = document.querySelector('#empty-results');
   let activeFilter = 'all';
 
   function applyFilters() {
@@ -281,12 +293,17 @@ def app_js() -> str:
       if (show) visible += 1;
     });
     resultCount.textContent = `${visible} shown`;
+    emptyResults.hidden = visible !== 0;
   }
 
   search.addEventListener('input', applyFilters);
   chips.forEach((chip) => chip.addEventListener('click', () => {
     activeFilter = chip.dataset.filter;
-    chips.forEach((item) => item.classList.toggle('active', item === chip));
+    chips.forEach((item) => {
+      const selected = item === chip;
+      item.classList.toggle('active', selected);
+      item.setAttribute('aria-pressed', String(selected));
+    });
     applyFilters();
   }));
   document.addEventListener('keydown', (event) => {

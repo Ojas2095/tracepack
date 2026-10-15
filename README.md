@@ -11,10 +11,10 @@ TracePack walks an evidence folder recursively and, for every regular file:
 - records a stable relative path, category, size, modified time, and SHA-256 digest;
 - reads a bounded UTF-8 preview for text-like files and safely labels binary evidence;
 - extracts ISO-like timestamps from filenames and text lines into a chronological timeline;
-- renders `case_pack.html` with local search, category filters, responsive styling, and expandable previews;
+- copies every source file into the output pack and renders `case_pack.html` with local search, category filters, responsive styling, and expandable previews;
 - writes `summary.md`, `timeline.md`, `manifest.json`, `manifest.sha256`, `styles.css`, and `app.js`.
 
-Everything in the generated output folder is self-contained. Open the HTML file directly in a browser; it does not need a server or an internet connection.
+Everything in the generated output folder is self-contained, including an `evidence/` copy of every source file. Open the HTML file directly in a browser; it does not need a server or an internet connection.
 
 ## Requirements
 
@@ -57,6 +57,7 @@ The CLI also supports:
 ```sh
 python -m tracepack --help
 python -m tracepack --version
+python -m tracepack verify path/to/case-pack
 ```
 
 ## Demo
@@ -70,7 +71,7 @@ python -m tracepack build demo/evidence \
   --force
 ```
 
-Open `demo/output/case_pack.html`. Try the `/` keyboard shortcut, search for `retry`, and switch between the evidence categories. The generated `manifest.sha256` can be checked with a local SHA-256 tool if desired.
+Open `demo/output/case_pack.html`. Try the `/` keyboard shortcut, search for `retry`, and switch between the evidence categories. Verify the generated pack with `python -m tracepack verify demo/output`.
 
 ## Test
 
@@ -86,7 +87,7 @@ Equivalent command when `make` is unavailable:
 python -m unittest discover -s tests -v
 ```
 
-The tests cover recursive discovery and ordering, binary/text handling, SHA-256 values, timestamp extraction, timeline fallbacks, HTML escaping/search hooks, manifest integrity, and CLI overwrite behavior.
+The tests cover recursive discovery and ordering, binary/text handling, SHA-256 values, malformed timestamp tolerance, timeline fallbacks, HTML escaping/accessibility hooks, manifest integrity, copied evidence, safe path boundaries, transactional overwrite behavior, tamper detection, and CLI failure handling.
 
 ## Docker
 
@@ -117,7 +118,11 @@ The repository also publishes the included fixture case as a static GitHub Pages
 ## Design notes and limitations
 
 - Text previews are capped at 512 KiB per source file to keep a case pack responsive. Hashes always cover the complete source file.
-- Binary files are indexed by metadata and digest but are not embedded in the HTML.
+- Binary files are indexed by metadata and digest and remain available through the copied `evidence/` download link.
 - Timeline extraction recognizes `YYYY-MM-DD`, ISO timestamps, and common UTC/offset forms. Files without a content timestamp use their filesystem modification time.
 - Generated timestamps reflect the local run time, while file ordering and manifest entries are stable by relative path.
 - No secrets, credentials, telemetry, or network services are used.
+
+## Build provenance
+
+TracePack was built in OmniRush for the Frontier Buildathon, using the Agents & Automation track. The secret-free build record and exact verification commands are in [`BUILD_PROVENANCE.md`](BUILD_PROVENANCE.md).
