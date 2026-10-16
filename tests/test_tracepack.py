@@ -95,6 +95,30 @@ class TracePackTests(unittest.TestCase):
         (output / "evidence" / "exports" / "result.csv").write_text("tampered", encoding="utf-8")
         self.assertIn("source checksum mismatch: exports/result.csv", verify_case_pack(output))
 
+    def test_verify_rejects_malformed_manifest_without_crashing(self) -> None:
+        output = self.root / "pack"
+        output.mkdir()
+        manifest = json.dumps({"files": None}).encode("utf-8")
+        (output / "manifest.json").write_bytes(manifest)
+        (output / "manifest.sha256").write_text(
+            f"{hashlib.sha256(manifest).hexdigest()}  manifest.json\n",
+            encoding="utf-8",
+        )
+
+        self.assertIn("manifest.json files must be a list", verify_case_pack(output))
+        self.assertEqual(main(["verify", str(output)]), 2)
+
+    def test_source_links_encode_url_special_characters(self) -> None:
+        evidence = self.root / "special-evidence"
+        evidence.mkdir()
+        (evidence / "report #1.txt").write_text("hello", encoding="utf-8")
+        output = self.root / "special-pack"
+
+        write_case_pack(evidence, output, "Special paths")
+
+        html = (output / "case_pack.html").read_text(encoding="utf-8")
+        self.assertIn("evidence/report%20%231.txt", html)
+
     def test_cli_rejects_non_empty_output_without_force(self) -> None:
         output = self.root / "pack"
         output.mkdir()

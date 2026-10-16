@@ -316,8 +316,26 @@ def verify_case_pack(pack_dir: Path) -> list[str]:
         manifest = json.loads(manifest_bytes)
     except json.JSONDecodeError as error:
         return errors + [f"manifest.json is invalid JSON: {error}"]
-    for item in manifest.get("files", []):
-        relative = Path(str(item.get("path", "")))
+    if not isinstance(manifest, dict):
+        return errors + ["manifest.json must contain an object"]
+
+    manifest_files = manifest.get("files")
+    if not isinstance(manifest_files, list):
+        return errors + ["manifest.json files must be a list"]
+
+    source_file_count = manifest.get("source_file_count")
+    if not isinstance(source_file_count, int) or source_file_count != len(manifest_files):
+        errors.append("manifest source_file_count does not match files")
+
+    for index, item in enumerate(manifest_files):
+        if not isinstance(item, dict):
+            errors.append(f"manifest file entry {index} must be an object")
+            continue
+        path_value = item.get("path")
+        if not isinstance(path_value, str) or not path_value:
+            errors.append(f"manifest file entry {index} has an invalid path")
+            continue
+        relative = Path(path_value)
         source = pack_dir / "evidence" / relative
         try:
             source.resolve().relative_to((pack_dir / "evidence").resolve())
