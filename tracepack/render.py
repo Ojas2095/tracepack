@@ -6,6 +6,7 @@ from datetime import datetime
 from html import escape
 import json
 from typing import Sequence
+from urllib.parse import quote
 
 from .core import EvidenceFile, TimelineEvent
 
@@ -139,7 +140,7 @@ def render_html(
               <h3>{escape(item.relative_path)}</h3>
               <p class="file-meta">{escape(item.extension)} · modified {escape(_display_time(item.modified_at))}</p>
               <details><summary>View evidence preview</summary><pre>{escape(content)}</pre></details>
-              <p class="source-link"><a href="evidence/{escape(item.relative_path, quote=True)}" download>Open complete source ↗</a></p>
+              <p class="source-link"><a href="evidence/{escape(quote(item.relative_path, safe="/"), quote=True)}" download>Open complete source ↗</a></p>
               <div class="hash-row" title="SHA-256">SHA-256 <code>{escape(item.sha256)}</code></div>
             </article>"""
         )
